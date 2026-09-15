@@ -18,14 +18,23 @@ export default async function AdminLoginPage({
     const username = (formData.get("username") as string)?.trim();
     const password = (formData.get("password") as string)?.trim();
 
-    if (username === "admin" && password === "admin") {
+    const expectedUser = process.env.ADMIN_USERNAME;
+    const expectedPass = process.env.ADMIN_PASSWORD;
+
+    // Fail safe if environment variables are not configured
+    if (!expectedUser || !expectedPass) {
+      console.error("ADMIN_USERNAME or ADMIN_PASSWORD is not configured in environment variables.");
+      redirect("/admin/login?error=Server authentication configuration error");
+    }
+
+    if (username === expectedUser && password === expectedPass) {
       const cookieStore = await cookies();
       cookieStore.set("admin_session", "true", {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
         path: "/",
-        maxAge: 60 * 60 * 24 * 7, // 7 days session
+        maxAge: 60 * 60 * 24 * 7, // 7 days
       });
       redirect("/admin");
     }
@@ -61,7 +70,8 @@ export default async function AdminLoginPage({
               type="text"
               name="username"
               required
-              placeholder="admin"
+              autoComplete="username"
+              placeholder="Username"
               className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             />
           </div>
@@ -74,6 +84,7 @@ export default async function AdminLoginPage({
               type="password"
               name="password"
               required
+              autoComplete="current-password"
               placeholder="••••••••"
               className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             />

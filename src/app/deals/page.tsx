@@ -4,31 +4,13 @@ import AddToCartButton from "@/components/AddToCartButton";
 
 export const dynamic = "force-dynamic";
 
-interface DealBook {
-  id: string;
-  title: string;
-  description: string | null;
-  price: number;
-  discountPrice: number | null;
-  isDeal: boolean;
-  publicationYear: number;
-  series: string | null;
-  coverImage: string | null;
-  fileUrl: string | null;
-  author: {
-    name: string;
-  };
-  publisher: {
-    name: string;
-  };
-}
-
 export default async function TodaysDealsPage() {
-  const deals: DealBook[] = await prisma.book.findMany({
+  const deals = await prisma.book.findMany({
     where: { isDeal: true },
     include: {
-      author: { select: { name: true } },
-      publisher: { select: { name: true } },
+      author: true,
+      publisher: true,
+      genre: true,
     },
     orderBy: { createdAt: "desc" },
   });

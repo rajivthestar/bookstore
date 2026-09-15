@@ -1,3 +1,0 @@
-module.exports=[86861,a=>{"use strict";var b=a.i(87924),c=a.i(82945),d=a.i(72131);a.s(["default",0,function({book:a}){let{addItem:e,toggleCart:f}=(0,c.useCartStore)(),[g,h]=(0,d.useState)(!1);return(0,b.jsx)("button",{onClick:()=>{e(a),h(!0),setTimeout(()=>{h(!1)},2e3)},className:`w-full md:w-auto px-8 py-3 rounded-lg font-semibold transition-all duration-200 ${g?"bg-emerald-600 text-white":"bg-indigo-600 hover:bg-indigo-700 text-white shadow-md hover:shadow-lg"}`,children:g?"✓ Added to Cart":"Add to Cart"})}])}];
-
-//# sourceMappingURL=src_components_AddToCartButton_tsx_0jjjy87._.js.map

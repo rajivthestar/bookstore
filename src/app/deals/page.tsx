@@ -1,16 +1,32 @@
-import prisma from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import AddToCartButton from "@/components/AddToCartButton";
 
 export const dynamic = "force-dynamic";
 
+interface DealBook {
+  id: string;
+  title: string;
+  description: string | null;
+  price: number;
+  discountPrice: number | null;
+  isDeal: boolean;
+  publicationYear: number;
+  coverImage: string | null;
+  author: {
+    name: string;
+  };
+  publisher: {
+    name: string;
+  };
+}
+
 export default async function TodaysDealsPage() {
-  const deals = await prisma.book.findMany({
+  const deals: DealBook[] = await prisma.book.findMany({
     where: { isDeal: true },
     include: {
-      author: true,
-      publisher: true,
-      genre: true,
+      author: { select: { name: true } },
+      publisher: { select: { name: true } },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -38,7 +54,7 @@ export default async function TodaysDealsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {deals.map((book) => {
+          {deals.map((book: DealBook) => {
             const activePrice = book.discountPrice ?? book.price;
 
             return (
@@ -49,7 +65,10 @@ export default async function TodaysDealsPage() {
                 <div>
                   <Link href={`/books/${book.id}`}>
                     <img
-                      src={book.coverImage || "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=600"}
+                      src={
+                        book.coverImage ||
+                        "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=600"
+                      }
                       alt={book.title}
                       className="w-full aspect-3/4 object-cover hover:opacity-90 transition"
                     />

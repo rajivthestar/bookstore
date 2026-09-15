@@ -1,260 +1,396 @@
-"use client";
+import prisma from "@/lib/prisma";
+import { revalidatePath } from "next/cache";
+import Link from "next/link";
+import DeleteBookButton from "@/components/DeleteBookButton";
 
-import { useState } from "react";
+export const dynamic = "force-dynamic";
 
-export default function AdminPage() {
-  const [loading, setLoading] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+interface AdminBook {
+  id: string;
+  title: string;
+  publicationYear: number;
+  price: number;
+  discountPrice: number | null;
+  isDeal: boolean;
+  coverImage: string | null;
+  author: { name: string };
+  publisher: { name: string };
+  genre: { name: string };
+}
 
-  const [formData, setFormData] = useState({
-    title: "",
-    authorName: "",
-    publisherName: "",
-    genreName: "",
-    publicationYear: new Date().getFullYear().toString(),
-    series: "",
-    price: "",
-    discountPrice: "",
-    isDeal: false,
-    coverImage: "",
-    fileUrl: "",
-    description: "",
+async function createBook(formData: FormData) {
+  "use server";
+
+  const title = (formData.get("title") as string)?.trim();
+  const authorName = (formData.get("author") as string)?.trim();
+  const genreName = (formData.get("genre") as string)?.trim();
+  const publisherName = (formData.get("publisher") as string)?.trim() || "Independent";
+  const price = parseFloat(formData.get("price") as string) || 0;
+  const discountPriceRaw = formData.get("discountPrice") as string;
+  const discountPrice = discountPriceRaw ? parseFloat(discountPriceRaw) : null;
+  const isDeal = formData.get("isDeal") === "on";
+  const publicationYear =
+    parseInt(formData.get("publicationYear") as string, 10) || new Date().getFullYear();
+  const series = (formData.get("series") as string)?.trim() || null;
+  const coverImage = (formData.get("coverImage") as string)?.trim() || null;
+  const fileUrl = (formData.get("fileUrl") as string)?.trim() || null;
+  const description = (formData.get("description") as string)?.trim() || null;
+
+  if (!title || !authorName || !genreName) {
+    return;
+  }
+
+  // Connect or create Author
+  let author = await prisma.author.findFirst({ where: { name: authorName } });
+  if (!author) {
+    author = await prisma.author.create({ data: { name: authorName } });
+  }
+
+  // Connect or create Genre
+  let genre = await prisma.genre.findFirst({ where: { name: genreName } });
+  if (!genre) {
+    genre = await prisma.genre.create({ data: { name: genreName } });
+  }
+
+  // Connect or create Publisher
+  let publisher = await prisma.publisher.findFirst({ where: { name: publisherName } });
+  if (!publisher) {
+    publisher = await prisma.publisher.create({ data: { name: publisherName } });
+  }
+
+  // Create Book
+  await prisma.book.create({
+    data: {
+      title,
+      description,
+      price,
+      discountPrice,
+      isDeal,
+      publicationYear,
+      series,
+      coverImage,
+      fileUrl,
+      authorId: author.id,
+      genreId: genre.id,
+      publisherId: publisher.id,
+    },
   });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value, type } = e.target;
-    if (type === "checkbox") {
-      const { checked } = e.target as HTMLInputElement;
-      setFormData((prev) => ({ ...prev, [name]: checked }));
-    } else {
-      setFormData((prev) => ({ ...prev, [name]: value }));
-    }
-  };
+  revalidatePath("/admin");
+  revalidatePath("/");
+  revalidatePath("/deals");
+}
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setStatusMessage(null);
+export default async function AdminPage() {
+  const books: AdminBook[] = await prisma.book.findMany({
+    include: {
+      author: { select: { name: true } },
+      genre: { select: { name: true } },
+      publisher: { select: { name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
 
-    try {
-      const res = await fetch("/api/admin/books", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to save book.");
-      }
-
-      setStatusMessage({ type: "success", text: `"${data.title}" was added successfully!` });
-      setFormData({
-        title: "",
-        authorName: "",
-        publisherName: "",
-        genreName: "",
-        publicationYear: new Date().getFullYear().toString(),
-        series: "",
-        price: "",
-        discountPrice: "",
-        isDeal: false,
-        coverImage: "",
-        fileUrl: "",
-        description: "",
-      });
-    } catch (err: any) {
-      console.error("Form submit error:", err);
-      setStatusMessage({ type: "error", text: err.message || "An unexpected error occurred." });
-    } finally {
-      setLoading(false);
-    }
-  };
+  const activeDealsCount = books.filter((b: AdminBook) => b.isDeal).length;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-10">
-      <div className="bg-white border border-gray-200 shadow-md rounded-2xl p-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Admin: Add New eBook</h1>
-        <p className="text-sm text-gray-500 mb-6">Enter book specifications to publish directly into the catalog.</p>
-
-        {statusMessage && (
-          <div
-            className={`p-4 rounded-lg mb-6 text-sm font-medium ${
-              statusMessage.type === "success"
-                ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                : "bg-red-50 text-red-800 border border-red-200"
-            }`}
-          >
-            {statusMessage.text}
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-6">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Admin Dashboard</h1>
+            <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wide">
+              Management
+            </span>
           </div>
-        )}
+          <p className="text-sm text-gray-500 mt-1">
+            Create new book listings, configure discount deals, and manage catalog inventory.
+          </p>
+        </div>
+        <Link
+          href="/"
+          className="inline-flex items-center text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition"
+        >
+          View Storefront →
+        </Link>
+      </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Book Title *</label>
+      {/* Metrics Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Total Titles</p>
+          <p className="text-3xl font-extrabold text-gray-900 mt-2">{books.length}</p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Active Deals</p>
+          <p className="text-3xl font-extrabold text-red-600 mt-2">{activeDealsCount}</p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Database Status</p>
+          <div className="flex items-center gap-2 mt-3">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="text-sm font-bold text-gray-700">Neon Connected</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Create New Book Form */}
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-xs overflow-hidden">
+        <div className="px-6 py-5 border-b border-gray-100 bg-gray-50/60">
+          <h2 className="text-lg font-bold text-gray-900">Add New eBook</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Authors, genres, and publishers are linked automatically or created if they don&apos;t exist.
+          </p>
+        </div>
+
+        <form action={createBook} className="p-6 space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="md:col-span-2">
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                Book Title *
+              </label>
               <input
-                required
                 type="text"
                 name="title"
-                value={formData.title}
-                onChange={handleChange}
-                placeholder="The Great Gatsby"
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Author Name *</label>
-              <input
                 required
-                type="text"
-                name="authorName"
-                value={formData.authorName}
-                onChange={handleChange}
-                placeholder="F. Scott Fitzgerald"
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-indigo-500"
+                placeholder="e.g. Atomic Habits"
+                className="w-full px-3.5 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Publisher *</label>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                Author *
+              </label>
               <input
-                required
                 type="text"
-                name="publisherName"
-                value={formData.publisherName}
-                onChange={handleChange}
-                placeholder="Scribner"
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-indigo-500"
+                name="author"
+                required
+                placeholder="e.g. James Clear"
+                className="w-full px-3.5 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Genre *</label>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                Genre *
+              </label>
               <input
-                required
                 type="text"
-                name="genreName"
-                value={formData.genreName}
-                onChange={handleChange}
-                placeholder="Classic Fiction"
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-indigo-500"
+                name="genre"
+                required
+                placeholder="e.g. Self-Help / Psychology"
+                className="w-full px-3.5 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Publication Year</label>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                Publisher
+              </label>
+              <input
+                type="text"
+                name="publisher"
+                placeholder="e.g. Penguin Random House"
+                className="w-full px-3.5 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                Publication Year
+              </label>
               <input
                 type="number"
                 name="publicationYear"
-                value={formData.publicationYear}
-                onChange={handleChange}
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-indigo-500"
+                defaultValue={new Date().getFullYear()}
+                className="w-full px-3.5 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Series (Optional)</label>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                Regular Price ($) *
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                name="price"
+                required
+                placeholder="19.99"
+                className="w-full px-3.5 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                Deal / Discount Price ($)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                name="discountPrice"
+                placeholder="9.99 (optional)"
+                className="w-full px-3.5 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                Series (Optional)
+              </label>
               <input
                 type="text"
                 name="series"
-                value={formData.series}
-                onChange={handleChange}
-                placeholder="Trilogy / Standalone"
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-indigo-500"
+                placeholder="e.g. Book 1 of 3"
+                className="w-full px-3.5 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Regular Price ($) *</label>
+            <div className="md:col-span-2">
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                Cover Image URL
+              </label>
               <input
-                required
-                step="0.01"
-                type="number"
-                name="price"
-                value={formData.price}
-                onChange={handleChange}
-                placeholder="9.99"
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Discount Price ($)</label>
-              <input
-                step="0.01"
-                type="number"
-                name="discountPrice"
-                value={formData.discountPrice}
-                onChange={handleChange}
-                placeholder="4.99"
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-indigo-500"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 pt-1">
-            <input
-              type="checkbox"
-              id="isDeal"
-              name="isDeal"
-              checked={formData.isDeal}
-              onChange={handleChange}
-              className="h-4 w-4 text-indigo-600 rounded"
-            />
-            <label htmlFor="isDeal" className="text-sm font-medium text-gray-700">
-              Mark as &quot;Today&apos;s Deal&quot; (displays on Deals page and highlights price)
-            </label>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Cover Image URL</label>
-              <input
-                type="text"
+                type="url"
                 name="coverImage"
-                value={formData.coverImage}
-                onChange={handleChange}
-                placeholder="https://images.unsplash.com/..."
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-indigo-500"
+                placeholder="https://images.unsplash.com/photo-..."
+                className="w-full px-3.5 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">eBook Download File URL</label>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                eBook File Download URL
+              </label>
               <input
-                type="text"
+                type="url"
                 name="fileUrl"
-                value={formData.fileUrl}
-                onChange={handleChange}
-                placeholder="https://example.com/sample.pdf"
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-indigo-500"
+                placeholder="https://storage.../book.pdf"
+                className="w-full px-3.5 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Description</label>
+            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+              Book Description
+            </label>
             <textarea
-              rows={3}
               name="description"
-              value={formData.description}
-              onChange={handleChange}
-              placeholder="Summary and synopsis of the book..."
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-indigo-500"
+              rows={3}
+              placeholder="Brief summary or marketing copy for this eBook..."
+              className="w-full px-3.5 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white py-3 rounded-lg font-semibold transition"
-          >
-            {loading ? "Saving to Database..." : "Save Book to Catalog"}
-          </button>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-gray-100">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                name="isDeal"
+                className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+              />
+              <span className="text-sm font-semibold text-gray-800">
+                Mark as Active Deal (Show on Deals Page)
+              </span>
+            </label>
+
+            <button
+              type="submit"
+              className="inline-flex justify-center items-center px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg shadow-sm transition cursor-pointer"
+            >
+              Add Book to Catalog
+            </button>
+          </div>
         </form>
+      </div>
+
+      {/* Inventory Management Table */}
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-xs overflow-hidden">
+        <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Current Catalog ({books.length})</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Live inventory synced with Neon PostgreSQL.
+            </p>
+          </div>
+        </div>
+
+        {books.length === 0 ? (
+          <div className="text-center py-16 text-gray-400">
+            <p className="text-base font-semibold">No books in catalog yet.</p>
+            <p className="text-xs mt-1">Use the form above to add your first title.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-gray-600">
+              <thead className="bg-gray-50 text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100">
+                <tr>
+                  <th className="py-3.5 px-6">Book</th>
+                  <th className="py-3.5 px-6">Author & Publisher</th>
+                  <th className="py-3.5 px-6">Genre</th>
+                  <th className="py-3.5 px-6">Price</th>
+                  <th className="py-3.5 px-6 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {books.map((book: AdminBook) => {
+                  return (
+                    <tr key={book.id} className="hover:bg-gray-50/60 transition">
+                      <td className="py-4 px-6 font-medium text-gray-900">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={
+                              book.coverImage ||
+                              "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=100"
+                            }
+                            alt={book.title}
+                            className="w-10 h-14 object-cover rounded shadow-xs shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <p className="font-bold text-gray-900 truncate max-w-xs">{book.title}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">{book.publicationYear}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <p className="font-semibold text-gray-800">{book.author.name}</p>
+                        <p className="text-xs text-gray-400">{book.publisher.name}</p>
+                      </td>
+                      <td className="py-4 px-6">
+                        <span className="inline-block bg-gray-100 text-gray-700 text-xs font-semibold px-2.5 py-1 rounded-md">
+                          {book.genre.name}
+                        </span>
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="flex items-baseline gap-2">
+                          <span className="font-extrabold text-gray-900">
+                            ${(book.discountPrice ?? book.price).toFixed(2)}
+                          </span>
+                          {book.discountPrice && (
+                            <span className="text-xs line-through text-gray-400">
+                              ${book.price.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                        {book.isDeal && (
+                          <span className="inline-block text-[10px] font-bold text-red-600 uppercase tracking-wider bg-red-50 px-1.5 py-0.5 rounded mt-1">
+                            Sale Deal
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-4 px-6 text-right">
+                        <DeleteBookButton bookId={book.id} bookTitle={book.title} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

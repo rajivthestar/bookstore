@@ -1,5 +1,7 @@
-import prisma from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import DeleteBookButton from "@/components/DeleteBookButton";
 
@@ -16,6 +18,13 @@ interface AdminBook {
   author: { name: string };
   publisher: { name: string };
   genre: { name: string };
+}
+
+async function logout() {
+  "use server";
+  const cookieStore = await cookies();
+  cookieStore.delete("admin_session");
+  redirect("/admin/login");
 }
 
 async function createBook(formData: FormData) {
@@ -108,12 +117,23 @@ export default async function AdminPage() {
             Create new book listings, configure discount deals, and manage catalog inventory.
           </p>
         </div>
-        <Link
-          href="/"
-          className="inline-flex items-center text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition"
-        >
-          View Storefront →
-        </Link>
+
+        <div className="flex items-center gap-4">
+          <Link
+            href="/"
+            className="inline-flex items-center text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition"
+          >
+            View Storefront →
+          </Link>
+          <form action={logout}>
+            <button
+              type="submit"
+              className="px-3.5 py-1.5 text-xs font-bold text-red-600 hover:text-white border border-red-200 hover:bg-red-600 rounded-lg transition shadow-2xs cursor-pointer"
+            >
+              Sign Out
+            </button>
+          </form>
+        </div>
       </div>
 
       {/* Metrics Row */}
